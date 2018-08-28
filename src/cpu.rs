@@ -52,7 +52,6 @@ impl Cpu {
         return cpu;
     }
 
-
     pub fn load_bytes(&mut self, bytes: Bytes<File>) {
         // load the file into memory, starting at 0x200 ending at 0xFFF
         for (i, byte) in bytes.enumerate() {
@@ -62,18 +61,40 @@ impl Cpu {
         self.execute_opcode();
     }
 
-    pub fn execute_opcode(&mut self) {
+    pub fn cycle(&mut self) {
+        self.execute_opcode();
+    }
+
+    fn execute_opcode(&mut self) {
         // opcode is 2 bytes
-        self.opcode = self.mem[self.pc as usize] as u16 | self.mem[self.pc as usize + 1] as u16;
+        self.opcode = (self.mem[self.pc as usize] as u16) << 8 | self.mem[self.pc as usize + 1] as u16;
         match self.opcode & 0xF000 {
             0xA000 => self.ANNN(),
+
             _ => println!("Unknown opcode {}", self.opcode)
         }
     }
 
     /// Sets I to the address NNN.
-    pub fn ANNN(&mut self) {
-        self.i = self.opcode & 0x0FF;
+    fn ANNN(&mut self) {
+        self.i = self.opcode & 0x0FFF;
         self.pc += 2;
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use cpu::*;
+
+    #[test]
+    fn test_annn() {
+        let mut cpu = Cpu::new();
+        cpu.mem[0] = 0xA1;
+        cpu.mem[1] = 0x23;
+        cpu.pc = 0;
+        cpu.cycle();
+
+        assert_eq!(cpu.i, 0xA123 & 0x0FFF);
     }
 }
