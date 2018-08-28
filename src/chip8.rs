@@ -4,18 +4,18 @@ use std::fs::File;
 use std::io::prelude::*;
 
 pub struct Chip8 {
-    cpu : Cpu
+    cpu: Cpu
 }
 
 impl Chip8 {
     pub fn new() -> Chip8 {
         Chip8 {
-            cpu : Cpu::new()
+            cpu: Cpu::new()
         }
     }
     pub fn load_rom(&mut self, path: &Path) {
         let file = File::open(path).unwrap();
-        print!("Loading rom from path: {:?}", file);
+        println!("Loading rom from path: {:?}", file);
 
         let bytes = file.bytes();
 

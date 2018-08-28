@@ -15,7 +15,7 @@ fn main() {
 //        return;
 //    }
 
-    let rom_path = Path::new("/home/armin/projects/rust/chip8/roms/testrom.ch8");
+    let rom_path = Path::new("roms/BC_test.ch8");
 
     let mut c8 = Chip8::new();
     c8.load_rom(rom_path);

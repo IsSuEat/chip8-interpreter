@@ -1,9 +1,5 @@
-use std::io::{Bytes,};
+use std::io::Bytes;
 use std::fs::File;
-
-enum OpCode {
-    A
-}
 
 
 const FONTSET: [u8; 80] = [
@@ -26,27 +22,27 @@ const FONTSET: [u8; 80] = [
 ];
 
 pub struct Cpu {
-    opcode : u16,
-    mem : [u8; 4096],
-    v : [u8; 16],
-    i : i16,
-    pc : i16,
-    gfx : [u8; 64*32],
-    stack : [u16; 16],
-    stack_pointer : u16,
-    key : [u8; 16],
+    opcode: u16,
+    mem: [u8; 4096],
+    v: [u8; 16],
+    i: u16,
+    pc: u16,
+    gfx: [u8; 64 * 32],
+    stack: [u16; 16],
+    stack_pointer: u16,
+    key: [u8; 16],
     // timers
 }
 
 impl Cpu {
     pub fn new() -> Cpu {
-       let mut cpu = Cpu {
+        let mut cpu = Cpu {
             opcode: 0,
             mem: [0; 4096],
             v: [0; 16],
             i: 0,
             pc: 0x200,
-            gfx: [0; 64*32],
+            gfx: [0; 64 * 32],
             stack: [0; 16],
             stack_pointer: 0,
             key: [0; 16],
@@ -57,21 +53,27 @@ impl Cpu {
     }
 
 
-
     pub fn load_bytes(&mut self, bytes: Bytes<File>) {
         // load the file into memory, starting at 0x200 ending at 0xFFF
         for (i, byte) in bytes.enumerate() {
             self.mem[i + 512] = byte.unwrap()
         }
         println!("Loaded into memory");
+        self.execute_opcode();
     }
 
-    pub fn get_optcode(&mut self) ->  {
+    pub fn execute_opcode(&mut self) {
         // opcode is 2 bytes
-        let opcode = self.mem[self.pc] << 8 | self.mem[self.pc +1];
-
-        match opcode &0xF00 {
-            0xA000 =>
+        self.opcode = self.mem[self.pc as usize] as u16 | self.mem[self.pc as usize + 1] as u16;
+        match self.opcode & 0xF000 {
+            0xA000 => self.ANNN(),
+            _ => println!("Unknown opcode {}", self.opcode)
         }
+    }
+
+    /// Sets I to the address NNN.
+    pub fn ANNN(&mut self) {
+        self.i = self.opcode & 0x0FF;
+        self.pc += 2;
     }
 }
