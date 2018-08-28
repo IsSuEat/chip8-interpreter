@@ -13,12 +13,12 @@ impl Chip8 {
             cpu : Cpu::new()
         }
     }
-    pub fn load_rom(&self, path: &Path) {
-        let mut file = File::open(path).unwrap();
-        for byte in file.bytes() {
-            // set memory to read bytes
+    pub fn load_rom(&mut self, path: &Path) {
+        let file = File::open(path).unwrap();
+        print!("Loading rom from path: {:?}", file);
 
-        }
-        print!("Loading rom from path: {:?}", file)
+        let bytes = file.bytes();
+
+        self.cpu.load_bytes(bytes);
     }
 }
