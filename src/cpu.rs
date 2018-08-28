@@ -95,6 +95,6 @@ mod tests {
         cpu.pc = 0;
         cpu.cycle();
 
-        assert_eq!(cpu.i, 0xA123 & 0x0FFF);
+        assert_eq!(cpu.i, 0x123);
     }
 }
