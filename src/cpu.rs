@@ -111,6 +111,11 @@ impl Cpu {
             0x5000 => self.op_5xy0(),
             0x6000 => self.op_6xnn(),
             0x7000 => self.op_7xnn(),
+            0x8000 => match opcode & 0x000F {
+                0x0005 => self.op_8xy5(),
+                _ => self.op_unknown()
+            }
+            0xD000 => self.op_dxyn(),
             0x0000 => match opcode & 0x000F {
                 0x0000 => self.op_00e0(),
                 0x000E => self.op_00ee(),
@@ -144,13 +149,17 @@ impl Cpu {
 
     /// Returns from a subroutine
     fn op_00ee(&mut self) {
+        self.pc = self.stack[self.stack_pointer as usize];
+        self.stack_pointer -= 1;
         debug!("Return from sub");
     }
 
     /// Jumps to address at NNN
     fn op_1nnn(&mut self) {
         let address = self.opcode & 0x0FFF;
+        self.pc = address;
         debug!("Jumping to {:X}", address);
+
     }
 
     /// Calls subroutine at NNN
@@ -222,6 +231,35 @@ impl Cpu {
         self.v[x as usize] = self.v[x as usize].wrapping_add(nn);
         self.inc_pc();
     }
+
+    /// VY is subtracted from VX. VF is set to 0 when there's a borrow, and 1 when there isn't.
+    /// pseudo c `Vx -= Vy `
+    fn op_8xy5(&mut self) {
+        let x = self._x();
+        let y = self._y();
+        if self.v[x as usize] < self.v[y as usize]  {
+            self.v[0xF] = 1;
+        } else {
+            self.v[0xF] = 0;
+        }
+        self.v[x as usize].wrapping_sub(self.v[y as usize]);
+        self.inc_pc();
+    }
+
+    ///
+    ///
+    fn op_dxyn(&mut self) {
+        let x = self._x();
+        let y = self._y();
+        let n = (self.opcode & 0x000F) as u8;
+
+
+
+        debug!("Drawing: x: {} y: {} n: {}", x, y, n);
+
+    }
+
+
 
     /// Extract X from opcode
     fn _x(&self) -> u8 {
