@@ -32,53 +32,96 @@ pub struct Cpu {
     stack_pointer: u16,
     key: [u8; 16],
     // timers
+    delay_timer : u8,
+    sound_timer : u8,
 }
 
-impl Cpu {
-    pub fn new() -> Cpu {
-        let mut cpu = Cpu {
-            opcode: 0,
-            mem: [0; 4096],
-            v: [0; 16],
-            i: 0,
-            pc: 0x200,
-            gfx: [0; 64 * 32],
-            stack: [0; 16],
-            stack_pointer: 0,
-            key: [0; 16],
-        };
+impl Default for Cpu {
+   fn default() -> Cpu {
+       Cpu {
+        opcode: 0,
+        mem: [0; 4096],
+        v: [0; 16],
+        i: 0,
+        pc: 0,
+        gfx: [0; 64 * 32],
+        stack: [0; 16],
+        stack_pointer: 0,
+        key: [0; 16],
+        delay_timer: 0,
+        sound_timer: 0,
+       }
+   } 
+}
 
-        cpu.mem[0..80].clone_from_slice(&FONTSET);
-        return cpu;
+impl Cpu {   
+    /// Setup fontmap and initialize program counter
+    /// Fontmap is loaded into the first 80 bytes 
+    /// Programm counter starts at 0x200
+    pub fn init(mut self) -> Self {
+        self.mem[0..80].clone_from_slice(&FONTSET);
+        self.pc = 0x200;
+        return self;
     }
 
+    /// Load bytes intor ROM and RAM memory range
+    /// Range starts at 0x200 and ends at 0xFFF
     pub fn load_bytes(&mut self, bytes: Bytes<File>) {
-        // load the file into memory, starting at 0x200 ending at 0xFFF
         for (i, byte) in bytes.enumerate() {
             self.mem[i + 512] = byte.unwrap()
         }
-        println!("Loaded into memory");
-        self.execute_opcode();
+    }
+    
+    /// Fetch the opcode from memory
+    /// Opcode is 2 bytes
+    fn fetch_opcode(&self) -> u16 {
+        let a = (self.mem[self.pc as usize] as u16) << 8 ;
+        let b = self.mem[self.pc as usize + 1] as u16;
+        return a | b;
     }
 
     pub fn cycle(&mut self) {
-        self.execute_opcode();
+        let opcode = self.fetch_opcode();
+        self.execute_opcode(opcode);   
+        self.handle_timers();
     }
 
-    fn execute_opcode(&mut self) {
-        // opcode is 2 bytes
-        self.opcode = (self.mem[self.pc as usize] as u16) << 8 | self.mem[self.pc as usize + 1] as u16;
-        match self.opcode & 0xF000 {
-            0xA000 => self.ANNN(),
+    fn handle_timers(&mut self) {
+        if self.delay_timer > 0 {
+            self.delay_timer -= 1;
+        }
 
-            _ => println!("Unknown opcode {}", self.opcode)
+        if self.sound_timer > 0 {
+            if self.sound_timer == 1 {
+                println!("BEEP");
+            }
+            self.sound_timer -= 1;
+        }
+    }
+
+    fn execute_opcode(&mut self, opcode: u16) {
+        self.opcode = opcode;
+
+        match opcode & 0xF000 {
+            0xA000 => self.op_annn(),
+            0x0000 => match opcode & 0x000F {
+                0x0000 => self.op_00e0(),
+                _ => println!("Unknown opcode 0x{:X}", opcode)
+            }
+            _ => println!("Unknown opcode 0x{:X}", opcode)
         }
     }
 
     /// Sets I to the address NNN.
-    fn ANNN(&mut self) {
+    fn op_annn(&mut self) {
         self.i = self.opcode & 0x0FFF;
         self.pc += 2;
+    }
+    
+    /// Clears the screen
+    fn op_00e0(&mut self) {
+        self.gfx = [0; 64*32];
+        println!("Clear screen");
     }
 }
 
@@ -89,12 +132,21 @@ mod tests {
 
     #[test]
     fn test_annn() {
-        let mut cpu = Cpu::new();
-        cpu.mem[0] = 0xA1;
-        cpu.mem[1] = 0x23;
-        cpu.pc = 0;
-        cpu.cycle();
-
+        let mut cpu = Cpu::default().init();
+        cpu.execute_opcode(0xA123);
+       
         assert_eq!(cpu.i, 0x123);
+    }
+
+    #[test]
+    fn test_00e0() {
+        let mut cpu = Cpu::default().init();
+        cpu.gfx = [1; 64*32];
+        assert!(cpu.gfx[1] == 1);
+
+        cpu.execute_opcode(0x00E0);
+     
+        assert_eq!(cpu.gfx[1], 0);
+
     }
 }
