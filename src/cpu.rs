@@ -98,26 +98,43 @@ impl Cpu {
             self.sound_timer -= 1;
         }
     }
+    /// Returns the contents of a register
+    fn read_register(&self, i: u8) -> u8 {
+        self.v[i as usize]
+    }
 
     fn execute_opcode(&mut self, opcode: u16) {
         self.opcode = opcode;
         debug!("OpCode: 0x{:X}", self.opcode);
         match opcode & 0xF000 {
-            0xA000 => self.op_annn(),
-            0x1000 => self.op_1nnn(),
-            0x2000 => self.op_2nnn(),
-            0x3000 => self.op_3xnn(),
+            0xA000 => {
+                let address = self.opcode & 0x0FFF;
+                self.set_index_register(address)
+            }
+            0x1000 => {
+                let address = self.opcode & 0x0FFF;
+                self.jump_to(address);
+            }
+            0x2000 => {
+                let address = self.opcode & 0x0FFF;
+                self.call_sub_at(address);
+            }
+            0x3000 => {
+                let vX = self.read_register(self._x());
+                let nn = self._nn();
+                self.skip_if_eq(vX, nn)
+            }
             0x4000 => self.op_4xnn(),
             0x5000 => self.op_5xy0(),
             0x6000 => self.op_6xnn(),
             0x7000 => self.op_7xnn(),
             0x8000 => match opcode & 0x000F {
                 0x0005 => self.op_8xy5(),
-                _ => self.op_unknown()
-            }
+                _ => self.op_unknown(),
+            },
             0xD000 => self.op_dxyn(),
             0x0000 => match opcode & 0x000F {
-                0x0000 => self.op_00e0(),
+                0x0000 => self.clear_screen(),
                 0x000E => self.op_00ee(),
                 _ => self.op_unknown(),
             },
@@ -135,13 +152,13 @@ impl Cpu {
     }
 
     /// Sets I to the address NNN.
-    fn op_annn(&mut self) {
-        self.i = self.opcode & 0x0FFF;
+    fn set_index_register(&mut self, address: u16) {
+        self.i = address;
         self.inc_pc();
     }
 
     /// Clears the screen
-    fn op_00e0(&mut self) {
+    fn clear_screen(&mut self) {
         self.gfx = [0; 64 * 32];
         self.inc_pc();
         debug!("Clear screen");
@@ -155,21 +172,18 @@ impl Cpu {
     }
 
     /// Jumps to address at NNN
-    fn op_1nnn(&mut self) {
-        let address = self.opcode & 0x0FFF;
+    fn jump_to(&mut self, address: u16) {
         self.pc = address;
         debug!("Jumping to {:X}", address);
-
     }
 
     /// Calls subroutine at NNN
-    fn op_2nnn(&mut self) {
-        let address = self.opcode & 0x0FFF;
-        debug!("Calling {:X}", address);
+    fn call_sub_at(&mut self, address: u16) {
         //store current program counter
         self.stack[self.stack_pointer as usize] = self.pc;
         self.stack_pointer += 1;
         self.pc = address;
+        debug!("Calling {:X}", address);
     }
 
     /// Skips the next instruction if VX equals NN. (Usually the next instruction is a jump to skip a code block)
@@ -179,6 +193,14 @@ impl Cpu {
         let nn = self._nn();
 
         if self.v[x as usize] == nn {
+            self.pc += 4;
+            return;
+        }
+        self.inc_pc();
+    }
+
+    fn skip_if_eq(&mut self, x: u8, y: u8) {
+        if x == y {
             self.pc += 4;
             return;
         }
@@ -237,7 +259,7 @@ impl Cpu {
     fn op_8xy5(&mut self) {
         let x = self._x();
         let y = self._y();
-        if self.v[x as usize] < self.v[y as usize]  {
+        if self.v[x as usize] < self.v[y as usize] {
             self.v[0xF] = 1;
         } else {
             self.v[0xF] = 0;
@@ -253,27 +275,22 @@ impl Cpu {
         let y = self._y();
         let n = (self.opcode & 0x000F) as u8;
 
-
-
         debug!("Drawing: x: {} y: {} n: {}", x, y, n);
-
     }
-
-
 
     /// Extract X from opcode
     fn _x(&self) -> u8 {
-        return ((self.opcode & 0x0F00) >> 8) as u8;
+        ((self.opcode & 0x0F00) >> 8) as u8
     }
 
     /// Extract Y from opcode
     fn _y(&self) -> u8 {
-        return ((self.opcode & 0x00F0) >> 4) as u8;
+        ((self.opcode & 0x00F0) >> 4) as u8
     }
 
     /// Extract NN from opcode
     fn _nn(&self) -> u8 {
-        return (self.opcode & 0x00FF) as u8;
+        (self.opcode & 0x00FF) as u8
     }
 }
 
@@ -304,7 +321,7 @@ mod tests {
     }
 
     #[test]
-    fn test_00e0() {
+    fn test_clear_screen() {
         let mut cpu = Cpu::default().init();
         cpu.gfx = [1; 64 * 32];
         assert_eq!(cpu.gfx[1], 1);
@@ -314,14 +331,14 @@ mod tests {
         assert_eq!(cpu.gfx[1], 0);
     }
 
-    #[test]
-    fn test_00ee() {
-        let mut cpu = Cpu::default().init();
-        cpu.execute_opcode(0x00EE);
-    }
+    //    #[test]
+    //    fn test_00ee() {
+    //        let mut cpu = Cpu::default().init();
+    //        cpu.execute_opcode(0x00EE);
+    //    }
 
     #[test]
-    fn test_1nnn() {
+    fn test_jump_to() {
         let mut cpu = Cpu::default().init();
         cpu.execute_opcode(0x1FFF);
     }
