@@ -93,7 +93,7 @@ impl Cpu {
 
         if self.sound_timer > 0 {
             if self.sound_timer == 1 {
-                println!("BEEP");
+                debug!("BEEP");
             }
             self.sound_timer -= 1;
         }
@@ -101,7 +101,7 @@ impl Cpu {
 
     fn execute_opcode(&mut self, opcode: u16) {
         self.opcode = opcode;
-
+        debug!("OpCode: 0x{:X}", self.opcode);
         match opcode & 0xF000 {
             0xA000 => self.op_annn(),
             0x1000 => self.op_1nnn(),
@@ -121,7 +121,7 @@ impl Cpu {
     }
 
     fn op_unknown(&mut self) {
-        println!(
+        error!(
             "Unknown opcode 0x{:X}, 0x{:X}",
             self.opcode,
             self.opcode & 0xF000
@@ -132,31 +132,31 @@ impl Cpu {
     /// Sets I to the address NNN.
     fn op_annn(&mut self) {
         self.i = self.opcode & 0x0FFF;
-        self.pc += 2;
+        self.inc_pc();
     }
 
     /// Clears the screen
     fn op_00e0(&mut self) {
         self.gfx = [0; 64 * 32];
-        self.pc += 2;
-        println!("Clear screen");
+        self.inc_pc();
+        debug!("Clear screen");
     }
 
     /// Returns from a subroutine
     fn op_00ee(&mut self) {
-        println!("Return from sub");
+        debug!("Return from sub");
     }
 
     /// Jumps to address at NNN
     fn op_1nnn(&mut self) {
         let address = self.opcode & 0x0FFF;
-        println!("Jumping to {:X}", address);
+        debug!("Jumping to {:X}", address);
     }
 
     /// Calls subroutine at NNN
     fn op_2nnn(&mut self) {
         let address = self.opcode & 0x0FFF;
-        println!("Calling {:X}", address);
+        debug!("Calling {:X}", address);
         //store current program counter
         self.stack[self.stack_pointer as usize] = self.pc;
         self.stack_pointer += 1;
@@ -173,6 +173,10 @@ impl Cpu {
             self.pc += 4;
             return;
         }
+        self.inc_pc();
+    }
+
+    fn inc_pc(&mut self) {
         self.pc += 2;
     }
 
@@ -186,7 +190,7 @@ impl Cpu {
             self.pc += 4;
             return;
         }
-        self.pc += 2;
+        self.inc_pc();
     }
 
     /// Skips the next instruction if VX equals VY. (Usually the next instruction is a jump to skip a code block)
@@ -198,16 +202,15 @@ impl Cpu {
             self.pc += 4;
             return;
         }
-        self.pc += 2;
+        self.inc_pc();
     }
 
     /// Sets VX to NN.
     fn op_6xnn(&mut self) {
         let x = self._x();
         let nn = (self.opcode & 0x00FF) as u8;
-        println!("Setting V{} to {}", x, nn);
         self.v[x as usize] = nn;
-        self.pc += 2;
+        self.inc_pc();
     }
 
     /// Adds NN to VX. (Carry flag is not changed)
@@ -217,6 +220,7 @@ impl Cpu {
         let nn = self._nn();
 
         self.v[x as usize] = self.v[x as usize].wrapping_add(nn);
+        self.inc_pc();
     }
 
     /// Extract X from opcode
@@ -238,7 +242,6 @@ impl Cpu {
 #[cfg(test)]
 mod tests {
     use cpu::*;
-
     #[test]
     fn test_x_y() {
         let mut cpu = Cpu::default().init();

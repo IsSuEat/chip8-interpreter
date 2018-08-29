@@ -13,13 +13,18 @@ impl Chip8 {
             cpu: Cpu::default().init(),
         }
     }
-    pub fn load_rom(&mut self, path: &Path) {
+    pub fn load_rom(&mut self, path: &String) {
         let file = File::open(path).unwrap();
-        println!("Loading rom from path: {:?}", file);
-
         let bytes = file.bytes();
 
+        info!("Read rom from: {}", path);
         self.cpu.load_bytes(bytes);
+    }
+
+    pub fn run(&mut self) {
+        loop {
+            self.cpu.cycle();
+        }
     }
 }
 
@@ -30,9 +35,7 @@ mod tests {
     #[test]
     fn test_load_rom() {
         let mut c8 = Chip8::new();
-        c8.load_rom(Path::new(&String::from("roms/BC_test.ch8")));
-        loop {
-            c8.cpu.cycle();
-        }
+        c8.load_rom(&String::from("roms/BC_test.ch8"));
+        c8.run();
     }
 }
