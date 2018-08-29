@@ -1,18 +1,17 @@
 use cpu::Cpu;
-use std::path::Path;
 use std::fs::File;
 use std::io::prelude::*;
+use std::path::Path;
 
 pub struct Chip8 {
-    cpu: Cpu
+    cpu: Cpu,
 }
 
 impl Chip8 {
     pub fn new() -> Chip8 {
         Chip8 {
-            cpu: Cpu::default().init()
+            cpu: Cpu::default().init(),
         }
-
     }
     pub fn load_rom(&mut self, path: &Path) {
         let file = File::open(path).unwrap();
@@ -32,8 +31,8 @@ mod tests {
     fn test_load_rom() {
         let mut c8 = Chip8::new();
         c8.load_rom(Path::new(&String::from("roms/BC_test.ch8")));
-        c8.cpu.cycle();
-        c8.cpu.cycle();
-        
+        loop {
+            c8.cpu.cycle();
+        }
     }
 }

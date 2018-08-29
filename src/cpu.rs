@@ -1,6 +1,5 @@
-use std::io::Bytes;
 use std::fs::File;
-
+use std::io::Bytes;
 
 const FONTSET: [u8; 80] = [
     0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
@@ -18,7 +17,7 @@ const FONTSET: [u8; 80] = [
     0xF0, 0x80, 0x80, 0x80, 0xF0, // C
     0xE0, 0x90, 0x90, 0x90, 0xE0, // D
     0xF0, 0x80, 0xF0, 0x80, 0xF0, // E
-    0xF0, 0x80, 0xF0, 0x80, 0x80  // F
+    0xF0, 0x80, 0xF0, 0x80, 0x80, // F
 ];
 
 pub struct Cpu {
@@ -32,31 +31,31 @@ pub struct Cpu {
     stack_pointer: u16,
     key: [u8; 16],
     // timers
-    delay_timer : u8,
-    sound_timer : u8,
+    delay_timer: u8,
+    sound_timer: u8,
 }
 
 impl Default for Cpu {
-   fn default() -> Cpu {
-       Cpu {
-        opcode: 0,
-        mem: [0; 4096],
-        v: [0; 16],
-        i: 0,
-        pc: 0,
-        gfx: [0; 64 * 32],
-        stack: [0; 16],
-        stack_pointer: 0,
-        key: [0; 16],
-        delay_timer: 0,
-        sound_timer: 0,
-       }
-   } 
+    fn default() -> Cpu {
+        Cpu {
+            opcode: 0,
+            mem: [0; 4096],
+            v: [0; 16],
+            i: 0,
+            pc: 0,
+            gfx: [0; 64 * 32],
+            stack: [0; 16],
+            stack_pointer: 0,
+            key: [0; 16],
+            delay_timer: 0,
+            sound_timer: 0,
+        }
+    }
 }
 
-impl Cpu {   
+impl Cpu {
     /// Setup fontmap and initialize program counter
-    /// Fontmap is loaded into the first 80 bytes 
+    /// Fontmap is loaded into the first 80 bytes
     /// Programm counter starts at 0x200
     pub fn init(mut self) -> Self {
         self.mem[0..80].clone_from_slice(&FONTSET);
@@ -71,18 +70,18 @@ impl Cpu {
             self.mem[i + 512] = byte.unwrap()
         }
     }
-    
+
     /// Fetch the opcode from memory
     /// Opcode is 2 bytes
     fn fetch_opcode(&self) -> u16 {
-        let a = (self.mem[self.pc as usize] as u16) << 8 ;
+        let a = (self.mem[self.pc as usize] as u16) << 8;
         let b = self.mem[self.pc as usize + 1] as u16;
         return a | b;
     }
 
     pub fn cycle(&mut self) {
         let opcode = self.fetch_opcode();
-        self.execute_opcode(opcode);   
+        self.execute_opcode(opcode);
         self.handle_timers();
     }
 
@@ -111,9 +110,9 @@ impl Cpu {
             0x0000 => match opcode & 0x000F {
                 0x0000 => self.op_00e0(),
                 0x000E => self.op_00ee(),
-                _ => self.op_unknown()
-            }
-            _ => self.op_unknown()
+                _ => self.op_unknown(),
+            },
+            _ => self.op_unknown(),
         }
     }
 
@@ -127,10 +126,10 @@ impl Cpu {
         self.i = self.opcode & 0x0FFF;
         self.pc += 2;
     }
-    
+
     /// Clears the screen
     fn op_00e0(&mut self) {
-        self.gfx = [0; 64*32];
+        self.gfx = [0; 64 * 32];
         self.pc += 2;
         println!("Clear screen");
     }
@@ -142,19 +141,18 @@ impl Cpu {
 
     /// Jumps to address at NNN
     fn op_1nnn(&mut self) {
-        let address = self.opcode & 0x0FFF;  
+        let address = self.opcode & 0x0FFF;
         println!("Jumping to {:X}", address);
     }
 
-    /// Calls subroutine at NNN 
+    /// Calls subroutine at NNN
     fn op_2nnn(&mut self) {
         let address = self.opcode & 0x0FFF;
         println!("Calling {:X}", address);
-        //store current program counter 
+        //store current program counter
         self.stack[self.stack_pointer as usize] = self.pc;
         self.stack_pointer += 1;
         self.pc = address;
-        
     }
 
     /// Skips the next instruction if VX equals NN. (Usually the next instruction is a jump to skip a code block)
@@ -168,19 +166,17 @@ impl Cpu {
             return;
         }
         self.pc += 2;
-
     }
 
-    /// Sets VX to NN. 
+    /// Sets VX to NN.
     fn op_6xnn(&mut self) {
         let x = (self.opcode & 0x0F00) >> 8;
         let nn = (self.opcode & 0x00FF) as u8;
         println!("Setting V{} to {}", x, nn);
         self.v[x as usize] = nn;
         self.pc += 2;
-    } 
+    }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -190,18 +186,18 @@ mod tests {
     fn test_annn() {
         let mut cpu = Cpu::default().init();
         cpu.execute_opcode(0xA123);
-       
+
         assert_eq!(cpu.i, 0x123);
     }
 
     #[test]
     fn test_00e0() {
         let mut cpu = Cpu::default().init();
-        cpu.gfx = [1; 64*32];
+        cpu.gfx = [1; 64 * 32];
         assert_eq!(cpu.gfx[1], 1);
 
         cpu.execute_opcode(0x00E0);
-     
+
         assert_eq!(cpu.gfx[1], 0);
     }
 
