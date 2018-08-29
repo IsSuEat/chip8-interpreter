@@ -106,6 +106,7 @@ impl Cpu {
             0xA000 => self.op_annn(),
             0x1000 => self.op_1nnn(),
             0x2000 => self.op_2nnn(),
+            0x3000 => self.op_3xnn(),
             0x6000 => self.op_6xnn(),
             0x0000 => match opcode & 0x000F {
                 0x0000 => self.op_00e0(),
@@ -118,6 +119,7 @@ impl Cpu {
 
     fn op_unknown(&mut self) {
         println!("Unknown opcode {:X}", self.opcode);
+        panic!();
     }
 
     /// Sets I to the address NNN.
@@ -155,11 +157,27 @@ impl Cpu {
         
     }
 
+    /// Skips the next instruction if VX equals NN. (Usually the next instruction is a jump to skip a code block)
+    /// pseudo c `if(Vx==NN)`
+    fn op_3xnn(&mut self) {
+        let x = (self.opcode & 0x0F00) >> 8;
+        let nn = (self.opcode & 0x00FF) as u8;
+
+        if self.v[x as usize] == nn {
+            self.pc += 4;
+            return;
+        }
+        self.pc += 2;
+
+    }
+
     /// Sets VX to NN. 
     fn op_6xnn(&mut self) {
-        let x = self.opcode & 0x0F00;
-        let nn = self.opcode & 0x00FF;
+        let x = (self.opcode & 0x0F00) >> 8;
+        let nn = (self.opcode & 0x00FF) as u8;
         println!("Setting V{} to {}", x, nn);
+        self.v[x as usize] = nn;
+        self.pc += 2;
     } 
 }
 
@@ -180,7 +198,7 @@ mod tests {
     fn test_00e0() {
         let mut cpu = Cpu::default().init();
         cpu.gfx = [1; 64*32];
-        assert!(cpu.gfx[1] == 1);
+        assert_eq!(cpu.gfx[1], 1);
 
         cpu.execute_opcode(0x00E0);
      
@@ -207,8 +225,27 @@ mod tests {
     }
 
     #[test]
-    fn test_foo() {
+    fn test_6xnn() {
         let mut cpu = Cpu::default().init();
         cpu.execute_opcode(0x62FF);
+        assert_eq!(cpu.v[2], 0xFF);
+    }
+
+    #[test]
+    fn test_3xnn() {
+        let mut cpu = Cpu::default().init();
+        // set register 2 to 0xFF
+        cpu.v[2] = 0xFF;
+        // if v[2] == 0xFF
+        cpu.execute_opcode(0x32FF);
+        // skip 4, starting at 0x200
+        assert_eq!(cpu.pc, 0x204);
+        // set register 2 to 0xF0
+        // now if v[2[ == 0xFF is false, so only increment by 2
+        cpu.v[2] = 0xF0;
+        // reset pc
+        cpu.pc = 0x200;
+        cpu.execute_opcode(0x32FF);
+        assert_eq!(cpu.pc, 0x202);
     }
 }
