@@ -104,12 +104,20 @@ impl Cpu {
 
         match opcode & 0xF000 {
             0xA000 => self.op_annn(),
+            0x1000 => self.op_1nnn(),
+            0x2000 => self.op_2nnn(),
+            0x6000 => self.op_6xnn(),
             0x0000 => match opcode & 0x000F {
                 0x0000 => self.op_00e0(),
-                _ => println!("Unknown opcode 0x{:X}", opcode)
+                0x000E => self.op_00ee(),
+                _ => self.op_unknown()
             }
-            _ => println!("Unknown opcode 0x{:X}", opcode)
+            _ => self.op_unknown()
         }
+    }
+
+    fn op_unknown(&mut self) {
+        println!("Unknown opcode {:X}", self.opcode);
     }
 
     /// Sets I to the address NNN.
@@ -121,8 +129,38 @@ impl Cpu {
     /// Clears the screen
     fn op_00e0(&mut self) {
         self.gfx = [0; 64*32];
+        self.pc += 2;
         println!("Clear screen");
     }
+
+    /// Returns from a subroutine
+    fn op_00ee(&mut self) {
+        println!("Return from sub");
+    }
+
+    /// Jumps to address at NNN
+    fn op_1nnn(&mut self) {
+        let address = self.opcode & 0x0FFF;  
+        println!("Jumping to {:X}", address);
+    }
+
+    /// Calls subroutine at NNN 
+    fn op_2nnn(&mut self) {
+        let address = self.opcode & 0x0FFF;
+        println!("Calling {:X}", address);
+        //store current program counter 
+        self.stack[self.stack_pointer as usize] = self.pc;
+        self.stack_pointer += 1;
+        self.pc = address;
+        
+    }
+
+    /// Sets VX to NN. 
+    fn op_6xnn(&mut self) {
+        let x = self.opcode & 0x0F00;
+        let nn = self.opcode & 0x00FF;
+        println!("Setting V{} to {}", x, nn);
+    } 
 }
 
 
@@ -147,6 +185,30 @@ mod tests {
         cpu.execute_opcode(0x00E0);
      
         assert_eq!(cpu.gfx[1], 0);
+    }
 
+    #[test]
+    fn test_00ee() {
+        let mut cpu = Cpu::default().init();
+        cpu.execute_opcode(0x0123);
+    }
+
+    #[test]
+    fn test_1nnn() {
+        let mut cpu = Cpu::default().init();
+        cpu.execute_opcode(0x1FFF);
+    }
+
+    #[test]
+    fn test_2nnn() {
+        let mut cpu = Cpu::default().init();
+        cpu.execute_opcode(0x2123);
+        assert_eq!(cpu.pc, 0x123);
+    }
+
+    #[test]
+    fn test_foo() {
+        let mut cpu = Cpu::default().init();
+        cpu.execute_opcode(0x62FF);
     }
 }

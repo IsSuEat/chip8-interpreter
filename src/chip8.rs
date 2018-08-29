@@ -33,5 +33,7 @@ mod tests {
         let mut c8 = Chip8::new();
         c8.load_rom(Path::new(&String::from("roms/BC_test.ch8")));
         c8.cpu.cycle();
+        c8.cpu.cycle();
+        
     }
 }
