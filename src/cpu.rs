@@ -1,6 +1,5 @@
 use std::fs::File;
 use std::io::Bytes;
-use std::num::Wrapping;
 
 const FONTSET: [u8; 80] = [
     0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
@@ -99,8 +98,19 @@ impl Cpu {
         }
     }
     /// Returns the contents of a register
-    fn read_register(&self, i: u8) -> u8 {
-        self.v[i as usize]
+    fn read_register(&self, register: u8) -> u8 {
+        self.v[register as usize]
+    }
+
+    /// Write `content` to `register`.
+    /// Does not increment program counter
+    fn set_register(&mut self, register: u8, content: u8) {
+        self.v[register as usize] = content
+    }
+
+    /// Increment program counter by two, normal step
+    fn inc_pc(&mut self) {
+        self.pc += 2;
     }
 
     fn execute_opcode(&mut self, opcode: u16) {
@@ -120,22 +130,44 @@ impl Cpu {
                 self.call_sub_at(address);
             }
             0x3000 => {
-                let vX = self.read_register(self._x());
+                let vx = self.read_register(self._x());
                 let nn = self._nn();
-                self.skip_if_eq(vX, nn)
+                self.skip_if_eq(vx, nn)
             }
-            0x4000 => self.op_4xnn(),
-            0x5000 => self.op_5xy0(),
-            0x6000 => self.op_6xnn(),
-            0x7000 => self.op_7xnn(),
+            0x4000 => {
+                let vx = self.read_register(self._x());
+                let nn = self._nn();
+                self.skip_if_neq(vx, nn);
+            }
+            0x5000 => {
+                let vx = self.read_register(self._x());
+                let vy = self.read_register(self._y());
+                self.skip_if_eq(vx, vy);
+            }
+            0x6000 => {
+                let vx = self._x();
+                let nn = self._nn();
+                self.set_register(vx, nn);
+                self.inc_pc();
+            }
+            0x7000 => {
+                let vx = self._x();
+                let nn = self._nn();
+                self.add_to_register(vx, nn);
+            }
             0x8000 => match opcode & 0x000F {
-                0x0005 => self.op_8xy5(),
+                0x0005 => {
+                    let vx = self._x();
+                    let vY = self._y();
+                    let value = self.read_register(vY);
+                    self.subtract_from_register(vx, value);
+                }
                 _ => self.op_unknown(),
             },
-            0xD000 => self.op_dxyn(),
+            0xD000 => self.draw(),
             0x0000 => match opcode & 0x000F {
                 0x0000 => self.clear_screen(),
-                0x000E => self.op_00ee(),
+                0x000E => self.return_from_sub(),
                 _ => self.op_unknown(),
             },
             _ => self.op_unknown(),
@@ -165,7 +197,7 @@ impl Cpu {
     }
 
     /// Returns from a subroutine
-    fn op_00ee(&mut self) {
+    fn return_from_sub(&mut self) {
         self.pc = self.stack[self.stack_pointer as usize];
         self.stack_pointer -= 1;
         debug!("Return from sub");
@@ -188,17 +220,6 @@ impl Cpu {
 
     /// Skips the next instruction if VX equals NN. (Usually the next instruction is a jump to skip a code block)
     /// pseudo c `if(Vx==NN)`
-    fn op_3xnn(&mut self) {
-        let x = self._x();
-        let nn = self._nn();
-
-        if self.v[x as usize] == nn {
-            self.pc += 4;
-            return;
-        }
-        self.inc_pc();
-    }
-
     fn skip_if_eq(&mut self, x: u8, y: u8) {
         if x == y {
             self.pc += 4;
@@ -207,75 +228,47 @@ impl Cpu {
         self.inc_pc();
     }
 
-    fn inc_pc(&mut self) {
-        self.pc += 2;
-    }
-
     /// Skips the next instruction if VX doesn't equal NN. (Usually the next instruction is a jump to skip a code block)
     /// pseudo c `if(Vx!=NN)`
-    fn op_4xnn(&mut self) {
-        let x = self._x();
-        let nn = self._nn();
-
-        if self.v[x as usize] != nn {
+    fn skip_if_neq(&mut self, x: u8, y: u8) {
+        if x != y {
             self.pc += 4;
             return;
         }
         self.inc_pc();
     }
 
-    /// Skips the next instruction if VX equals VY. (Usually the next instruction is a jump to skip a code block)
-    /// pseudo c `if(Vx==Vy)`
-    fn op_5xy0(&mut self) {
-        let x = self._x();
-        let y = self._y();
-        if self.v[x as usize] == self.v[y as usize] {
-            self.pc += 4;
-            return;
-        }
+    /// Add data to the contents of register
+    /// Does not change the carry flag
+    fn add_to_register(&mut self, register: u8, data: u8) {
+        let res = self.read_register(register).wrapping_add(data);
+        self.set_register(register, res);
         self.inc_pc();
     }
 
-    /// Sets VX to NN.
-    fn op_6xnn(&mut self) {
-        let x = self._x();
-        let nn = (self.opcode & 0x00FF) as u8;
-        self.v[x as usize] = nn;
-        self.inc_pc();
-    }
-
-    /// Adds NN to VX. (Carry flag is not changed)
-    /// pseudo c `Vx += NN `
-    fn op_7xnn(&mut self) {
-        let x = self._x();
-        let nn = self._nn();
-
-        self.v[x as usize] = self.v[x as usize].wrapping_add(nn);
-        self.inc_pc();
-    }
-
-    /// VY is subtracted from VX. VF is set to 0 when there's a borrow, and 1 when there isn't.
-    /// pseudo c `Vx -= Vy `
-    fn op_8xy5(&mut self) {
-        let x = self._x();
-        let y = self._y();
-        if self.v[x as usize] < self.v[y as usize] {
-            self.v[0xF] = 1;
+    /// Subtract `x` from the value stored in `register` and store the result in `register`
+    /// VF is set to 0 when there's a borrow, and 1 when there isn't
+    fn subtract_from_register(&mut self, register: u8, x: u8) {
+        let old_value = self.read_register(register);
+        if old_value < x {
+            self.set_register(0xF, 1);
         } else {
-            self.v[0xF] = 0;
+            self.set_register(0xF, 0);
         }
-        self.v[x as usize].wrapping_sub(self.v[y as usize]);
+        let res = self.read_register(register).wrapping_sub(x);
+        self.set_register(register, res);
         self.inc_pc();
     }
 
+    /// Fills gfx buffer with sprite data
     ///
-    ///
-    fn op_dxyn(&mut self) {
+    fn draw(&mut self) {
         let x = self._x();
         let y = self._y();
         let n = (self.opcode & 0x000F) as u8;
 
         debug!("Drawing: x: {} y: {} n: {}", x, y, n);
+        // self.inc_pc();
     }
 
     /// Extract X from opcode
@@ -313,7 +306,7 @@ mod tests {
     }
 
     #[test]
-    fn test_annn() {
+    fn test_set_index_register() {
         let mut cpu = Cpu::default().init();
         cpu.execute_opcode(0xA123);
 
@@ -417,4 +410,13 @@ mod tests {
         assert_eq!(cpu.v[2], 0x04);
     }
 
+    #[test]
+    fn test_subtract_from_register() {
+        let mut cpu = Cpu::default().init();
+        cpu.set_register(2, 0xFF);
+        cpu.set_register(3, 0x0F);
+        cpu.execute_opcode(0x8235);
+        assert_eq!(cpu.read_register(2), 0xF0);
+        assert_eq!(cpu.pc, 0x202);
+    }
 }
