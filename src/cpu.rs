@@ -124,10 +124,11 @@ impl Cpu {
         self.opcode = opcode;
         debug!("OpCode: 0x{:X}", self.opcode);
         match opcode & 0xF000 {
-            0xA000 => {
-                let address = self.opcode & 0x0FFF;
-                self.set_index_register(address);
-            }
+            0x0000 => match opcode & 0x000F {
+                0x0000 => self.clear_screen(),
+                0x000E => self.return_from_sub(),
+                _ => self.op_unknown(),
+            },
             0x1000 => {
                 let address = self.opcode & 0x0FFF;
                 self.jump_to(address);
@@ -163,14 +164,40 @@ impl Cpu {
                 self.add_to_register(vx, nn);
             }
             0x8000 => match opcode & 0x000F {
+                0x0003 => {
+                    let x = self._x();
+                    let y= self._y();
+                    self.xor(x, y);
+                }
+                0x0004 => {
+                    let x = self._x();
+                    let vy = self.read_register(self._y());
+                    self.add_to_register_with_carry(x, vy);
+                }
                 0x0005 => {
                     let vx = self._x();
-                    let vY = self._y();
-                    let value = self.read_register(vY);
-                    self.subtract_from_register(vx, value);
+                    let value = self.read_register(self._y());
+                    self.subtract_from_register_with_carry(vx, value);
+                }
+                0x006 => {
+                    let vx = self._x();
+                    self.right_shift_register(vx);
+                }
+                0x007 => {
+                    let vx = self._x();
+                    let vy = self._y();
+                    self.subtract_registerx_from_registery_set_registerx(vx, vy);
+                }
+                0x00E => {
+                    let vx = self._x();
+                    self.left_shift_register(vx);
                 }
                 _ => self.op_unknown(),
             },
+            0xA000 => {
+                let address = self.opcode & 0x0FFF;
+                self.set_index_register(address);
+            }
             0xD000 => self.draw(),
             0xF000 => match opcode & 0x00FF {
                 0x0029 => {
@@ -185,11 +212,6 @@ impl Cpu {
                     let vx = self._x();
                     self.fill_registers_up_to(vx);
                 }
-                _ => self.op_unknown(),
-            },
-            0x0000 => match opcode & 0x000F {
-                0x0000 => self.clear_screen(),
-                0x000E => self.return_from_sub(),
                 _ => self.op_unknown(),
             },
             _ => self.op_unknown(),
@@ -268,17 +290,89 @@ impl Cpu {
         self.inc_pc();
     }
 
-    /// Subtract `x` from the value stored in `register` and store the result in `register`
-    /// VF is set to 0 when there's a borrow, and 1 when there isn't
-    fn subtract_from_register(&mut self, register: u8, x: u8) {
+    /// Adds VY to VX. VF is set to 1 when there's a carry, and to 0 when there isn't.
+    /// 8XY4
+    fn add_to_register_with_carry(&mut self, register: u8, data: u8) {
         let old_value = self.read_register(register);
-        if old_value < x {
+        // need to check for carry
+        let (result, need_carry) = old_value.overflowing_add(data);
+        if need_carry {
             self.set_register(0xF, 1);
         } else {
             self.set_register(0xF, 0);
         }
-        let res = self.read_register(register).wrapping_sub(x);
-        self.set_register(register, res);
+
+        self.set_register(register, result);
+        self.inc_pc();
+    }
+
+    /// Subtract `x` from the value stored in `register` and store the result in `register`
+    /// VF is set to 0 when there's a borrow, and 1 when there isn't
+    fn subtract_from_register_with_carry(&mut self, register: u8, x: u8) {
+        let old_value = self.read_register(register);
+        let (result, need_carry) = old_value.overflowing_sub(x);
+
+        if need_carry {
+            self.set_register(0xF, 0);
+        } else {
+            self.set_register(0xF, 1);
+        }
+
+        self.set_register(register, result);
+        self.inc_pc();
+    }
+
+    /// Sets VX to VY minus VX. VF is set to 0 when there's a borrow, and 1 when there isn't.
+    /// 8XY7
+    fn subtract_registerx_from_registery_set_registerx(&mut self, x: u8, y: u8) {
+        let vx = self.read_register(x);
+        let vy = self.read_register(y);
+
+        let (result, need_carry) = vy.overflowing_sub(vx);
+        if need_carry {
+            self.set_register(0xF, 0);
+        } else {
+            self.set_register(0xF, 1);
+        }
+        self.set_register(x, result);
+        self.inc_pc();
+    }
+
+    /// Stores the least significant bit of VX in VF and then shifts VX to the right by 1.[2]
+    /// 8XY6
+    fn right_shift_register(&mut self, register: u8)  {
+        let vx = self.read_register(register);
+        let least_significant = vx & 0x1;
+        let result = vx >> 1;
+        self.set_register(register, result);
+        self.set_register(0xF, least_significant);
+        self.inc_pc();
+    }
+
+    /// Stores the most significant bit of VX in VF and then shifts VX to the left by 1.[3]
+    /// 8XYE
+    fn left_shift_register(&mut self, register: u8) {
+        let vx = self.read_register(register);
+        // taken from stackoverflow
+        let mut most_significant = 0;
+//        let most_significant = (vx & 0x80)  1:0;
+        if vx >= 128 {
+            most_significant = 1;
+        }
+        let result = vx << 1u8;
+        self.set_register(register, result);
+        self.set_register(0xF, most_significant);
+        self.inc_pc();
+    }
+
+    /// Sets VX to VX xor VY.
+    /// 8XY3
+    fn xor(&mut self, registerx: u8, registery: u8) {
+        let vx = self.read_register(registerx);
+        let vy = self.read_register(registery);
+
+        let result = vx ^ vy;
+        self.set_register(registerx, result);
         self.inc_pc();
     }
 
@@ -300,9 +394,9 @@ impl Cpu {
         self.set_index_register(address_of_sprite as u16);
     }
 
-    // Fills V0 to VX (including VX) with values from memory starting at address I.
-    // The offset from I is increased by 1 for each value written, but I itself is left unmodified.
-    // FF65
+    /// Fills V0 to VX (including VX) with values from memory starting at address I.
+    /// The offset from I is increased by 1 for each value written, but I itself is left unmodified.
+    /// FF65
     fn fill_registers_up_to(&mut self, end_register: u8) {
         for idx in 0..=end_register {
             let content = self.read_mem(self.i + idx as u16);
@@ -320,8 +414,6 @@ impl Cpu {
         self.mem[(self.i + 2) as usize] = (x % 100) % 10;
         self.inc_pc();
     }
-
-    
 
     /// Extract X from opcode
     fn _x(&self) -> u8 {
@@ -470,6 +562,10 @@ mod tests {
         cpu.execute_opcode(0x8235);
         assert_eq!(cpu.read_register(2), 0xF0);
         assert_eq!(cpu.pc, 0x202);
+        cpu.set_register(2, 0x0F);
+        cpu.set_register(3, 0xFF);
+        cpu.execute_opcode(0x8235);
+        assert_eq!(cpu.read_register(0xF), 1);
     }
 
     #[test]
@@ -505,5 +601,21 @@ mod tests {
         assert_eq!(cpu.read_mem(cpu.i), 1);
         assert_eq!(cpu.read_mem(cpu.i + 1), 4);
         assert_eq!(cpu.read_mem(cpu.i + 2), 8);
+    }
+
+    #[test]
+    fn test_add_to_register_with_carry() {
+        let mut cpu = Cpu::default().init();
+        cpu.set_register(0x1, 5);
+        cpu.set_register(0x2, 5);
+        // add 5 + 5 in register 0x1
+        cpu.execute_opcode(0x8124);
+        assert_eq!(cpu.read_register(0x1), 10);
+        assert_eq!(cpu.read_register(0xF), 0);
+        cpu.set_register(0x1, 0xFF);
+        cpu.set_register(0x2, 0x02);
+        cpu.execute_opcode(0x8124);
+        assert_eq!(cpu.read_register(0xF), 1);
+        assert_eq!(cpu.read_register(0x1), 1);
     }
 }

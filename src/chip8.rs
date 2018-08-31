@@ -2,6 +2,8 @@ use cpu::Cpu;
 use std::fs::File;
 use std::io::prelude::*;
 use std::path::Path;
+use std::thread;
+use std::time::Duration;
 
 pub struct Chip8 {
     cpu: Cpu,
@@ -24,6 +26,7 @@ impl Chip8 {
     pub fn run(&mut self) {
         loop {
             self.cpu.cycle();
+            thread::sleep(Duration::from_millis(50));
         }
     }
 }
