@@ -36,6 +36,7 @@ pub struct Cpu {
     // timers
     delay_timer: u8,
     sound_timer: u8,
+    redraw: bool,
 }
 
 impl Default for Cpu {
@@ -52,6 +53,7 @@ impl Default for Cpu {
             key: [0; 16],
             delay_timer: 0,
             sound_timer: 0,
+            redraw: false,
         }
     }
 }
@@ -166,7 +168,7 @@ impl Cpu {
             0x8000 => match opcode & 0x000F {
                 0x0003 => {
                     let x = self._x();
-                    let y= self._y();
+                    let y = self._y();
                     self.xor(x, y);
                 }
                 0x0004 => {
@@ -224,7 +226,7 @@ impl Cpu {
             self.opcode,
             self.opcode & 0xF000
         );
-        panic!();
+        self.inc_pc();
     }
 
     /// Sets I to the address NNN.
@@ -236,6 +238,7 @@ impl Cpu {
     /// Clears the screen
     fn clear_screen(&mut self) {
         self.gfx = [0; 64 * 32];
+        self.redraw = true;
         self.inc_pc();
         debug!("Clear screen");
     }
@@ -340,7 +343,7 @@ impl Cpu {
 
     /// Stores the least significant bit of VX in VF and then shifts VX to the right by 1.[2]
     /// 8XY6
-    fn right_shift_register(&mut self, register: u8)  {
+    fn right_shift_register(&mut self, register: u8) {
         let vx = self.read_register(register);
         let least_significant = vx & 0x1;
         let result = vx >> 1;
@@ -353,12 +356,12 @@ impl Cpu {
     /// 8XYE
     fn left_shift_register(&mut self, register: u8) {
         let vx = self.read_register(register);
-        // taken from stackoverflow
+
         let mut most_significant = 0;
-//        let most_significant = (vx & 0x80)  1:0;
         if vx >= 128 {
             most_significant = 1;
         }
+
         let result = vx << 1u8;
         self.set_register(register, result);
         self.set_register(0xF, most_significant);
@@ -379,12 +382,35 @@ impl Cpu {
     /// Fills gfx buffer with sprite data
     ///
     fn draw(&mut self) {
-        let x = self._x();
-        let y = self._y();
-        let n = (self.opcode & 0x000F) as u8;
+        let x = self._x() as u16;
+        let y = self._y() as u16;
+        let number_of_lines = (self.opcode & 0x000F) as u16;
+        for line in 0..number_of_lines {
+            let pixel = self.mem[(self.i + line) as usize];
+            for x_pos in 0..8 {
+                if (pixel & (0x80 >> x_pos)) != 0 {
+                    // need to flip the pixel
+                    // check if we need carry
+                    let offset = x as u16 + x_pos as u16 + ((line + y) * 64);
+                    if self.gfx[offset as usize] == 1 {
+                        self.set_register(0xF, 1);
+                    }
+                    self.gfx[offset as usize] ^= 1;
+                }
+            }
+        }
+        debug!("Drawing: x: {} y: {} n: {}", x, y, number_of_lines);
 
-        debug!("Drawing: x: {} y: {} n: {}", x, y, n);
+        self.redraw = true;
         self.inc_pc();
+    }
+
+    pub fn needs_redraw(&self) -> Option<&[u8]> {
+        if self.redraw {
+            Some(&self.gfx)
+        } else {
+            None
+        }
     }
 
     /// Sets I to the location of the sprite for the character in VX. Characters 0-F (in hexadecimal) are represented by a 4x5 font.
