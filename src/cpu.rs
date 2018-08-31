@@ -1,7 +1,10 @@
 use std::fs::File;
 use std::io::Bytes;
 
-const FONTSET: [u8; 80] = [
+const FONTSET_SIZE: usize = 80;
+const FONTSET_START: usize = 80;
+
+const FONTSET: [u8; FONTSET_SIZE] = [
     0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
     0x20, 0x60, 0x20, 0x20, 0x70, // 1
     0xF0, 0x10, 0xF0, 0x80, 0xF0, // 2
@@ -58,7 +61,7 @@ impl Cpu {
     /// Fontmap is loaded into the first 80 bytes
     /// Programm counter starts at 0x200
     pub fn init(mut self) -> Self {
-        self.mem[0..80].clone_from_slice(&FONTSET);
+        self.mem[FONTSET_START..FONTSET_START + FONTSET_SIZE].clone_from_slice(&FONTSET);
         self.pc = 0x200;
         return self;
     }
@@ -113,13 +116,17 @@ impl Cpu {
         self.pc += 2;
     }
 
+    fn read_mem(&self, offset: u16) -> u8 {
+        self.mem[offset as usize]
+    }
+
     fn execute_opcode(&mut self, opcode: u16) {
         self.opcode = opcode;
         debug!("OpCode: 0x{:X}", self.opcode);
         match opcode & 0xF000 {
             0xA000 => {
                 let address = self.opcode & 0x0FFF;
-                self.set_index_register(address)
+                self.set_index_register(address);
             }
             0x1000 => {
                 let address = self.opcode & 0x0FFF;
@@ -165,6 +172,21 @@ impl Cpu {
                 _ => self.op_unknown(),
             },
             0xD000 => self.draw(),
+            0xF000 => match opcode & 0x00FF {
+                0x0029 => {
+                    let vx = self._x();
+                    self.set_index_register_to_character_sprite(vx);
+                }
+                0x0033 => {
+                    let vx = self.read_register(self._x());
+                    self.store_bcd(vx);
+                }
+                0x0065 => {
+                    let vx = self._x();
+                    self.fill_registers_up_to(vx);
+                }
+                _ => self.op_unknown(),
+            },
             0x0000 => match opcode & 0x000F {
                 0x0000 => self.clear_screen(),
                 0x000E => self.return_from_sub(),
@@ -198,8 +220,8 @@ impl Cpu {
 
     /// Returns from a subroutine
     fn return_from_sub(&mut self) {
-        self.pc = self.stack[self.stack_pointer as usize];
         self.stack_pointer -= 1;
+        self.pc = self.stack[self.stack_pointer as usize];
         debug!("Return from sub");
     }
 
@@ -268,8 +290,38 @@ impl Cpu {
         let n = (self.opcode & 0x000F) as u8;
 
         debug!("Drawing: x: {} y: {} n: {}", x, y, n);
-        // self.inc_pc();
+        self.inc_pc();
     }
+
+    /// Sets I to the location of the sprite for the character in VX. Characters 0-F (in hexadecimal) are represented by a 4x5 font.
+    /// FX29
+    fn set_index_register_to_character_sprite(&mut self, sprite: u8) {
+        let address_of_sprite = FONTSET_START + (sprite * 5) as usize;
+        self.set_index_register(address_of_sprite as u16);
+    }
+
+    // Fills V0 to VX (including VX) with values from memory starting at address I.
+    // The offset from I is increased by 1 for each value written, but I itself is left unmodified.
+    // FF65
+    fn fill_registers_up_to(&mut self, end_register: u8) {
+        for idx in 0..=end_register {
+            let content = self.read_mem(self.i + idx as u16);
+            self.set_register(idx, content);
+        }
+        self.inc_pc();
+    }
+
+    /// Stores the binary-coded decimal representation of VX,
+    /// with the most significant of three digits at the address in I,
+    /// the middle digit at I plus 1, and the least significant digit at I plus 2
+    fn store_bcd(&mut self, x: u8) {
+        self.mem[self.i as usize] = x / 100;
+        self.mem[(self.i + 1) as usize] = (x / 10) % 10;
+        self.mem[(self.i + 2) as usize] = (x % 100) % 10;
+        self.inc_pc();
+    }
+
+    
 
     /// Extract X from opcode
     fn _x(&self) -> u8 {
@@ -418,5 +470,40 @@ mod tests {
         cpu.execute_opcode(0x8235);
         assert_eq!(cpu.read_register(2), 0xF0);
         assert_eq!(cpu.pc, 0x202);
+    }
+
+    #[test]
+    fn test_set_idx_to_sprite() {
+        let mut cpu = Cpu::default().init();
+        cpu.execute_opcode(0xF029);
+        assert_eq!(cpu.i, FONTSET_START as u16);
+        cpu.execute_opcode(0xF129);
+        assert_eq!(cpu.i, (FONTSET_START + 5) as u16);
+    }
+
+    #[test]
+    fn test_fill_registers_up_to() {
+        let mut cpu = Cpu::default().init();
+        cpu.mem[0] = 0xF;
+        cpu.mem[1] = 0x1;
+        cpu.mem[2] = 0x2;
+        cpu.mem[3] = 0x3;
+        // fill registers 0 up to (including) 3
+        cpu.execute_opcode(0xF365);
+        assert_eq!(cpu.read_register(0), 0xF);
+        assert_eq!(cpu.read_register(1), 0x1);
+        assert_eq!(cpu.read_register(2), 0x2);
+        assert_eq!(cpu.read_register(3), 0x3);
+    }
+
+    #[test]
+    fn test_store_bcd() {
+        let mut cpu = Cpu::default().init();
+        // 0x94 == 148 dec
+        cpu.set_register(0xE, 0x94);
+        cpu.execute_opcode(0xFE33);
+        assert_eq!(cpu.read_mem(cpu.i), 1);
+        assert_eq!(cpu.read_mem(cpu.i + 1), 4);
+        assert_eq!(cpu.read_mem(cpu.i + 2), 8);
     }
 }
