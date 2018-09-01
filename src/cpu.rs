@@ -102,6 +102,10 @@ impl Cpu {
             self.sound_timer -= 1;
         }
     }
+
+    pub fn dump_memory(&self) -> [u8; 4096] {
+        self.mem
+    }
     /// Returns the contents of a register
     fn read_register(&self, register: u8) -> u8 {
         self.v[register as usize]
@@ -166,6 +170,16 @@ impl Cpu {
                 self.add_to_register(vx, nn);
             }
             0x8000 => match opcode & 0x000F {
+                0x0001 => {
+                    let x = self._x();
+                    let y = self._y();
+                    self.or(x, y);
+                }
+                0x0002 => {
+                    let x = self._x();
+                    let y = self._y();
+                    self.and(x, y);
+                }
                 0x0003 => {
                     let x = self._x();
                     let y = self._y();
@@ -202,6 +216,14 @@ impl Cpu {
             }
             0xD000 => self.draw(),
             0xF000 => match opcode & 0x00FF {
+                0x001E => {
+                    let vx = self._x();
+                    self.add_vx_to_i(vx);
+                }
+                0x0055 => {
+                    let vx = self._x();
+                    self.store_registers_up_to(vx);
+                }
                 0x0029 => {
                     let vx = self._x();
                     self.set_index_register_to_character_sprite(vx);
@@ -226,6 +248,7 @@ impl Cpu {
             self.opcode,
             self.opcode & 0xF000
         );
+        panic!();
         self.inc_pc();
     }
 
@@ -379,6 +402,28 @@ impl Cpu {
         self.inc_pc();
     }
 
+    /// Sets VX to VX or VY. (Bitwise OR operation)
+    ///  8XY1
+    fn or(&mut self, registerx: u8, registery: u8) {
+        let vx = self.read_register(registerx);
+        let vy = self.read_register(registery);
+
+        let result = vx | vy;
+        self.set_register(registerx, result);
+        self.inc_pc();
+    }
+
+    /// Sets VX to VX and VY. (Bitwise AND operation)  
+    ///  8XY2
+    fn and(&mut self, registerx: u8, registery: u8) {
+        let vx = self.read_register(registerx);
+        let vy = self.read_register(registery);
+
+        let result = vx & vy;
+        self.set_register(registerx, result);
+        self.inc_pc();
+    }
+
     /// Fills gfx buffer with sprite data
     ///
     fn draw(&mut self) {
@@ -420,7 +465,32 @@ impl Cpu {
             let content = self.read_mem(self.i + idx as u16);
             self.set_register(idx, content);
         }
+        let i = self.i;
+        // self.set_index_register(i + end_register as u16 + 1u16);
+
         self.inc_pc();
+    }
+
+    /// Stores V0 to VX (including VX) in memory starting at address I. The offset from I is increased by 1 for each value written, but I itself is left unmodified.
+    /// FX55
+    fn store_registers_up_to(&mut self, registerx: u8) {
+        for idx in 0..=registerx {
+            let register_content = self.read_register(idx);
+            let store_address = self.i + idx as u16;
+            self.mem[store_address as usize] = register_content;
+        }
+        let i = self.i;
+        // self.set_index_register(i + registerx as u16 + 1u16);
+        self.inc_pc();
+    }
+
+    /// Adds VX to I.[4]
+    /// FX1E
+    fn add_vx_to_i(&mut self, vx: u8) {
+        let register_content = self.read_register(vx);
+        let result = self.i + register_content as u16;
+        self.set_index_register(result);
+        // self.inc_pc();
     }
 
     /// Stores the binary-coded decimal representation of VX,
