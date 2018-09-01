@@ -6,3 +6,4 @@ authors = ["armin <issue@archlinux.info>"]
 [dependencies]
 log = "0.4"
 env_logger = "0.5"
+piston_window = "0.80"

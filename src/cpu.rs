@@ -29,14 +29,14 @@ pub struct Cpu {
     v: [u8; 16],
     i: u16,
     pc: u16,
-    gfx: [u8; 64 * 32],
+    pub gfx: [u8; 64 * 32],
     stack: [u16; 16],
     stack_pointer: u16,
     key: [u8; 16],
     // timers
     delay_timer: u8,
     sound_timer: u8,
-    redraw: bool,
+    pub redraw: bool,
 }
 
 impl Default for Cpu {
@@ -403,14 +403,6 @@ impl Cpu {
 
         self.redraw = true;
         self.inc_pc();
-    }
-
-    pub fn needs_redraw(&self) -> Option<&[u8]> {
-        if self.redraw {
-            Some(&self.gfx)
-        } else {
-            None
-        }
     }
 
     /// Sets I to the location of the sprite for the character in VX. Characters 0-F (in hexadecimal) are represented by a 4x5 font.

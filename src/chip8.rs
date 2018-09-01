@@ -5,14 +5,21 @@ use std::path::Path;
 use std::thread;
 use std::time::Duration;
 
+use piston_window::*;
+
 pub struct Chip8 {
     cpu: Cpu,
+    window: PistonWindow,
 }
 
 impl Chip8 {
     pub fn new() -> Chip8 {
         Chip8 {
             cpu: Cpu::default().init(),
+            window: WindowSettings::new("Hello Piston!", [640, 480])
+                .exit_on_esc(true)
+                .build()
+                .unwrap(),
         }
     }
     pub fn load_rom(&mut self, path: &String) {
@@ -24,9 +31,41 @@ impl Chip8 {
     }
 
     pub fn run(&mut self) {
-        loop {
+        while let Some(e) = self.window.next() {
+            let foo = self.cpu.redraw;
+            let bar = self.cpu.gfx;
+            self.window.draw_2d(&e, |c, g| {
+                clear(color::BLACK, g);
+                //                let square = rectangle::square(0.0, 0.0, 500.0);
+                //                let transform = c.transform.trans(-25.0, -25.0);
+                let size = 20;
+                if foo {
+                    let pixel_size = 5;
+                    for y in 0..32 {
+                        for x in 0..64 {
+                            if bar[(x + y * 64) as usize] & 0x01 == 1 {
+                                let d = [
+                                    (x * size) as f64,
+                                    (y * size) as f64,
+                                    size as f64,
+                                    size as f64,
+                                ];
+                                Rectangle::new(color::WHITE).draw(d, &c.draw_state, c.transform, g);
+                            }
+                        }
+                    }
+                }
+            });
+
             self.cpu.cycle();
-            thread::sleep(Duration::from_millis(50));
+        }
+    }
+
+    pub fn draw_gfx_memory(&self, buffer: &[u8]) {
+        for y in 0u8..32 {
+            for x in 0u8..64 {
+                if buffer[(x + y * 64) as usize] & 0x01 == 1 {}
+            }
         }
     }
 }

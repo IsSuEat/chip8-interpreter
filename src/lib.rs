@@ -1,6 +1,7 @@
 #[macro_use]
 extern crate log;
 extern crate env_logger;
+extern crate piston_window;
 
 pub mod chip8;
 pub mod cpu;
