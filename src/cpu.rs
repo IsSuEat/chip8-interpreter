@@ -109,6 +109,10 @@ impl Cpu {
         }
     }
 
+    pub fn handle_key_press(&mut self, key: u8) {
+        debug!("key pressed {}", key);
+    }
+
     pub fn dump_memory(&self) -> [u8; 4096] {
         self.mem
     }
@@ -488,6 +492,7 @@ impl Cpu {
 
 
         let mut raster: [[bool; WIDTH]; HEIGTH] = [[false; 64]; 32];
+        self.set_register(0xF, 0);
         for line in 0..number_of_lines {
             let pixel = self.mem[(self.i + line) as usize];
             for x_pos in 0..8 {
@@ -495,12 +500,15 @@ impl Cpu {
                 if (pixel >> (7 - x_pos)) & 1  == 1{
                     let x_in_raster = ((start_x + x_pos) % WIDTH as u16) as usize;
                     let y_in_raster = ((line + start_y) % HEIGTH as u16) as usize;
-                    println!("{}, {}", x_in_raster, y_in_raster);
 
                     raster[y_in_raster][x_in_raster] = true;
                     // need to flip the pixel
                     // check if we need carry
-                    let offset = start_x as u16 + x_pos as u16 + ((line + start_y) * WIDTH as u16);
+                    let offset = ((start_x as u16 + x_pos as u16) as u16) + (((line + start_y) % HEIGTH as u16)* WIDTH as u16);
+                    if offset >= self.gfx.len() as u16 {
+                        debug!("Out of bounds {}, x: {}, y:{}: number of lines: {}", offset, x_in_raster, y_in_raster, number_of_lines);
+                        continue;
+                    }
                     if self.gfx[offset as usize] == 1 {
                         self.set_register(0xF, 1);
                     }
@@ -544,9 +552,9 @@ impl Cpu {
             self.set_register(idx, content);
         }
         let i = self.i;
-        // self.set_index_register(i + end_register as u16 + 1u16);
+        self.set_index_register(i + end_register as u16 + 1u16);
 
-        self.inc_pc();
+        // self.inc_pc();
     }
 
     /// Stores V0 to VX (including VX) in memory starting at address I. The offset from I is increased by 1 for each value written, but I itself is left unmodified.
@@ -558,8 +566,8 @@ impl Cpu {
             self.mem[store_address as usize] = register_content;
         }
         let i = self.i;
-        // self.set_index_register(i + registerx as u16 + 1u16);
-        self.inc_pc();
+        self.set_index_register(i + registerx as u16 + 1u16);
+        // self.inc_pc();
     }
 
     /// Adds VX to I.[4]
@@ -603,6 +611,7 @@ impl Cpu {
             self.pc += 4;
             return;
         }
+        debug!("Checking if key pressed: 0x{:X}",vx);
         self.inc_pc();
     }
 
@@ -614,6 +623,8 @@ impl Cpu {
             self.pc += 4;
             return
         }
+        debug!("Checking if key released: 0x{:X}",vx);
+
         self.inc_pc();
     }
 
