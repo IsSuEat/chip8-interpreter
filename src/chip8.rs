@@ -55,14 +55,19 @@ impl Chip8 {
                 }
             });
 
-            if let Some(key) = e.press_args() {
-                if key == Button::Keyboard(Key::Escape) {
-                    self.dump_memory();
-                }
-            }
             if let Some(u) = e.update_args() {
                 self.cpu.cycle(u.dt);
             }
+
+            if let Some(Button::Keyboard(key)) = e.press_args() {
+                if key == Key::Escape {
+                    self.dump_memory();
+                }
+                if key.code() >= 0x61 {
+                    self.cpu.handle_key_press(key.code() as u8);
+                }
+            }
+
 
         }
     }
