@@ -35,12 +35,13 @@ impl Chip8 {
             let should_draw = self.cpu.redraw;
             let mem = self.cpu.gfx;
             self.window.draw_2d(&e, |c, g| {
+
                 clear(color::BLACK, g);
-                let size = 20;
+                let size = 10;
                 if should_draw {
                     for y in 0..32 {
                         for x in 0..64 {
-                            if mem[(x + y * 64) as usize] & 0x01 == 1 {
+                            if mem[(x + (y * 64)) as usize] & 0x01 == 1 {
                                 let d = [
                                     (x * size) as f64,
                                     (y * size) as f64,
@@ -59,8 +60,10 @@ impl Chip8 {
                     self.dump_memory();
                 }
             }
+            if let Some(u) = e.update_args() {
+                self.cpu.cycle(u.dt);
+            }
 
-            self.cpu.cycle();
         }
     }
 

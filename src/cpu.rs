@@ -1,10 +1,13 @@
 use std::fs::File;
 use std::io::Bytes;
+use rand::prelude::*;
 
-const FONTSET_SIZE: usize = 80;
-const FONTSET_START: usize = 80;
+const FONTSET_START: usize = 0;
+const WIDTH: usize = 64;
+const HEIGTH: usize = 32;
 
-const FONTSET: [u8; FONTSET_SIZE] = [
+
+const FONTSET: [u8; 80] = [
     0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
     0x20, 0x60, 0x20, 0x20, 0x70, // 1
     0xF0, 0x10, 0xF0, 0x80, 0xF0, // 2
@@ -29,7 +32,7 @@ pub struct Cpu {
     v: [u8; 16],
     i: u16,
     pc: u16,
-    pub gfx: [u8; 64 * 32],
+    pub gfx: [u8; WIDTH * HEIGTH],
     stack: [u16; 16],
     stack_pointer: u16,
     key: [u8; 16],
@@ -63,7 +66,7 @@ impl Cpu {
     /// Fontmap is loaded into the first 80 bytes
     /// Programm counter starts at 0x200
     pub fn init(mut self) -> Self {
-        self.mem[FONTSET_START..FONTSET_START + FONTSET_SIZE].clone_from_slice(&FONTSET);
+        self.mem[0..80].clone_from_slice(&FONTSET);
         self.pc = 0x200;
         return self;
     }
@@ -84,10 +87,13 @@ impl Cpu {
         return a | b;
     }
 
-    pub fn cycle(&mut self) {
-        let opcode = self.fetch_opcode();
-        self.execute_opcode(opcode);
-        self.handle_timers();
+    pub fn cycle(&mut self, dt: f64) {
+        let num_instr = (dt * 600.0).round() as u64;
+        for _ in 1..num_instr {
+            let opcode = self.fetch_opcode();
+            self.execute_opcode(opcode);
+            self.handle_timers();
+        }
     }
 
     fn handle_timers(&mut self) {
@@ -170,6 +176,12 @@ impl Cpu {
                 self.add_to_register(vx, nn);
             }
             0x8000 => match opcode & 0x000F {
+                0x0000 => {
+                    let x = self._x();
+                    let vy = self.read_register(self._y());
+                    self.set_register(x, vy);
+                    self.inc_pc();
+                }
                 0x0001 => {
                     let x = self._x();
                     let y = self._y();
@@ -214,11 +226,35 @@ impl Cpu {
                 let address = self.opcode & 0x0FFF;
                 self.set_index_register(address);
             }
+            0xC000 => self.rand(),
             0xD000 => self.draw(),
+            0xE000 => match opcode & 0x00FF {
+                0x009E => {
+                    let x = self._x();
+                    self.check_key_pressed(x);
+                }
+                0x00A1 => {
+                    let x = self._x();
+                    self.check_key_released(x);
+                }
+                _ => self.op_unknown()
+            }
             0xF000 => match opcode & 0x00FF {
                 0x001E => {
                     let vx = self._x();
                     self.add_vx_to_i(vx);
+                }
+                0x007 => {
+                    let vx = self._x();
+                    self.get_delay_timer(vx);
+                }
+                0x0015 => {
+                    let vx = self._x();
+                    self.set_delay_timer(vx)
+                },
+                0x0018 => {
+                    let x = self._x();
+                    self.set_sound_timer(x);
                 }
                 0x0055 => {
                     let vx = self._x();
@@ -252,6 +288,22 @@ impl Cpu {
         self.inc_pc();
     }
 
+    fn set_delay_timer(&mut self, vx: u8) {
+        self.delay_timer = self.read_register(vx);
+        self.inc_pc();
+    }
+
+    fn set_sound_timer(&mut self, vx: u8) {
+        self.sound_timer = self.read_register(vx);
+        self.inc_pc();
+    }
+
+    fn get_delay_timer(&mut self, vx: u8) {
+        let current_delay = self.delay_timer;
+        self.set_register(vx, current_delay);
+        self.inc_pc();
+    }
+
     /// Sets I to the address NNN.
     fn set_index_register(&mut self, address: u16) {
         self.i = address;
@@ -271,6 +323,7 @@ impl Cpu {
         self.stack_pointer -= 1;
         self.pc = self.stack[self.stack_pointer as usize];
         debug!("Return from sub");
+        self.inc_pc();
     }
 
     /// Jumps to address at NNN
@@ -427,16 +480,27 @@ impl Cpu {
     /// Fills gfx buffer with sprite data
     ///
     fn draw(&mut self) {
-        let x = self._x() as u16;
-        let y = self._y() as u16;
-        let number_of_lines = (self.opcode & 0x000F) as u16;
+        let x = self._x();
+        let start_x = self.read_register(x) as u16;
+        let y = self._y();
+        let start_y = self.read_register(y) as u16;
+        let number_of_lines = (self.opcode & 0x000F) ;
+
+
+        let mut raster: [[bool; WIDTH]; HEIGTH] = [[false; 64]; 32];
         for line in 0..number_of_lines {
             let pixel = self.mem[(self.i + line) as usize];
             for x_pos in 0..8 {
-                if (pixel & (0x80 >> x_pos)) != 0 {
+//                if (pixel & (0x80 >> x_pos)) != 0 {
+                if (pixel >> (7 - x_pos)) & 1  == 1{
+                    let x_in_raster = ((start_x + x_pos) % WIDTH as u16) as usize;
+                    let y_in_raster = ((line + start_y) % HEIGTH as u16) as usize;
+                    println!("{}, {}", x_in_raster, y_in_raster);
+
+                    raster[y_in_raster][x_in_raster] = true;
                     // need to flip the pixel
                     // check if we need carry
-                    let offset = x as u16 + x_pos as u16 + ((line + y) * 64);
+                    let offset = start_x as u16 + x_pos as u16 + ((line + start_y) * WIDTH as u16);
                     if self.gfx[offset as usize] == 1 {
                         self.set_register(0xF, 1);
                     }
@@ -444,7 +508,21 @@ impl Cpu {
                 }
             }
         }
-        debug!("Drawing: x: {} y: {} n: {}", x, y, number_of_lines);
+
+        for (line_nr, line) in raster.iter().enumerate() {
+            print!("|");
+            for (col_nr, col) in line.iter().enumerate() {
+                if *col {
+                    print!("*");
+                } else {
+                    print!(".");
+                }
+            }
+            println!("|");
+        }
+
+
+//        debug!("Drawing: x: {} y: {} n: {}", x, y, number_of_lines);
 
         self.redraw = true;
         self.inc_pc();
@@ -453,7 +531,7 @@ impl Cpu {
     /// Sets I to the location of the sprite for the character in VX. Characters 0-F (in hexadecimal) are represented by a 4x5 font.
     /// FX29
     fn set_index_register_to_character_sprite(&mut self, sprite: u8) {
-        let address_of_sprite = FONTSET_START + (sprite * 5) as usize;
+        let address_of_sprite = FONTSET_START + (sprite * 5)  as usize;
         self.set_index_register(address_of_sprite as u16);
     }
 
@@ -496,10 +574,46 @@ impl Cpu {
     /// Stores the binary-coded decimal representation of VX,
     /// with the most significant of three digits at the address in I,
     /// the middle digit at I plus 1, and the least significant digit at I plus 2
+    /// FX33
     fn store_bcd(&mut self, x: u8) {
         self.mem[self.i as usize] = x / 100;
         self.mem[(self.i + 1) as usize] = (x / 10) % 10;
         self.mem[(self.i + 2) as usize] = (x % 100) % 10;
+        self.inc_pc();
+    }
+
+    /// Sets VX to the result of a bitwise and operation on a random number (Typically: 0 to 255) and NN.
+    /// CXNN
+    fn rand(&mut self) {
+        let x = self._x();
+        let vx = self.read_register(x);
+        let nn = self._nn();
+        let random_nr: u8 = thread_rng().gen_range(0, 255);
+
+        self.set_register(x, random_nr & nn);
+
+        self.inc_pc();
+    }
+
+    /// Skips the next instruction if the key stored in VX is pressed. (Usually the next instruction is a jump to skip a code block)
+    /// EX9E
+    fn check_key_pressed(&mut self, register: u8) {
+        let vx = self.read_register(register);
+        if self.key[vx as usize] != 0 {
+            self.pc += 4;
+            return;
+        }
+        self.inc_pc();
+    }
+
+    /// Skips the next instruction if the key stored in VX isn't pressed. (Usually the next instruction is a jump to skip a code block)
+    /// EXA1
+    fn check_key_released(&mut self, register: u8) {
+        let vx = self.read_register(register);
+        if self.key[vx as usize] == 0 {
+            self.pc += 4;
+            return
+        }
         self.inc_pc();
     }
 
