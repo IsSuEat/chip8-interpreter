@@ -767,7 +767,7 @@ mod tests {
         cpu.set_register(2, 0x0F);
         cpu.set_register(3, 0xFF);
         cpu.execute_opcode(0x8235);
-        assert_eq!(cpu.read_register(0xF), 1);
+        assert_eq!(cpu.read_register(0xF), 0);
     }
 
     #[test]
