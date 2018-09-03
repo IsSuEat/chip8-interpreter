@@ -1,11 +1,10 @@
+use rand::prelude::*;
 use std::fs::File;
 use std::io::Bytes;
-use rand::prelude::*;
 
 const FONTSET_START: usize = 0;
 const WIDTH: usize = 64;
 const HEIGTH: usize = 32;
-
 
 const FONTSET: [u8; 80] = [
     0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
@@ -110,11 +109,17 @@ impl Cpu {
     }
 
     pub fn handle_key_press(&mut self, key: u8) {
-        debug!("key pressed {}", key);
+        debug!("key pressed 0x{:X}", key);
+        self.key[key as usize] = 1;
     }
 
-    pub fn dump_memory(&self) -> [u8; 4096] {
-        self.mem
+    pub fn handle_key_release(&mut self, key: u8) {
+        debug!("key released 0x{:X}", key);
+        self.key[key as usize] = 0;
+    }
+
+    pub fn dump_memory(&self) -> &[u8; 4096] {
+        &self.mem
     }
     /// Returns the contents of a register
     fn read_register(&self, register: u8) -> u8 {
@@ -226,6 +231,11 @@ impl Cpu {
                 }
                 _ => self.op_unknown(),
             },
+            0x9000 => {
+                let registerx_contents = self.read_register(self._x());
+                let registery_contents = self.read_register(self._y());
+                self.skip_if_neq(registerx_contents, registery_contents);
+            }
             0xA000 => {
                 let address = self.opcode & 0x0FFF;
                 self.set_index_register(address);
@@ -241,8 +251,8 @@ impl Cpu {
                     let x = self._x();
                     self.check_key_released(x);
                 }
-                _ => self.op_unknown()
-            }
+                _ => self.op_unknown(),
+            },
             0xF000 => match opcode & 0x00FF {
                 0x001E => {
                     let vx = self._x();
@@ -255,7 +265,7 @@ impl Cpu {
                 0x0015 => {
                     let vx = self._x();
                     self.set_delay_timer(vx)
-                },
+                }
                 0x0018 => {
                     let x = self._x();
                     self.set_sound_timer(x);
@@ -282,14 +292,17 @@ impl Cpu {
         }
     }
 
-    fn op_unknown(&mut self) {
+    pub fn needs_redraw(&self) -> bool {
+        self.redraw
+    }
+
+    fn op_unknown(&self) {
         error!(
             "Unknown opcode 0x{:X}, 0x{:X}",
             self.opcode,
             self.opcode & 0xF000
         );
         panic!();
-        self.inc_pc();
     }
 
     fn set_delay_timer(&mut self, vx: u8) {
@@ -349,8 +362,7 @@ impl Cpu {
     /// pseudo c `if(Vx==NN)`
     fn skip_if_eq(&mut self, x: u8, y: u8) {
         if x == y {
-            self.pc += 4;
-            return;
+            self.inc_pc();
         }
         self.inc_pc();
     }
@@ -359,8 +371,7 @@ impl Cpu {
     /// pseudo c `if(Vx!=NN)`
     fn skip_if_neq(&mut self, x: u8, y: u8) {
         if x != y {
-            self.pc += 4;
-            return;
+            self.inc_pc();
         }
         self.inc_pc();
     }
@@ -488,26 +499,28 @@ impl Cpu {
         let start_x = self.read_register(x) as u16;
         let y = self._y();
         let start_y = self.read_register(y) as u16;
-        let number_of_lines = (self.opcode & 0x000F) ;
-
+        let number_of_lines = self.opcode & 0x000F;
 
         let mut raster: [[bool; WIDTH]; HEIGTH] = [[false; 64]; 32];
         self.set_register(0xF, 0);
         for line in 0..number_of_lines {
             let pixel = self.mem[(self.i + line) as usize];
             for x_pos in 0..8 {
-//                if (pixel & (0x80 >> x_pos)) != 0 {
-                if (pixel >> (7 - x_pos)) & 1  == 1{
+                if (pixel >> (7 - x_pos)) & 1 == 1 {
                     let x_in_raster = ((start_x + x_pos) % WIDTH as u16) as usize;
                     let y_in_raster = ((line + start_y) % HEIGTH as u16) as usize;
 
                     raster[y_in_raster][x_in_raster] = true;
                     // need to flip the pixel
                     // check if we need carry
-                    let offset = ((start_x as u16 + x_pos as u16) as u16) + (((line + start_y) % HEIGTH as u16)* WIDTH as u16);
+                    let offset = ((start_x as u16 + x_pos as u16) as u16)
+                        + (((line + start_y) % HEIGTH as u16) * WIDTH as u16);
                     if offset >= self.gfx.len() as u16 {
-                        debug!("Out of bounds {}, x: {}, y:{}: number of lines: {}", offset, x_in_raster, y_in_raster, number_of_lines);
-                        continue;
+                        debug!(
+                            "Out of bounds {}, x: {}, y:{}: number of lines: {}",
+                            offset, x_in_raster, y_in_raster, number_of_lines
+                        );
+                        panic!();
                     }
                     if self.gfx[offset as usize] == 1 {
                         self.set_register(0xF, 1);
@@ -517,20 +530,17 @@ impl Cpu {
             }
         }
 
-        for (line_nr, line) in raster.iter().enumerate() {
-            print!("|");
-            for (col_nr, col) in line.iter().enumerate() {
-                if *col {
-                    print!("*");
-                } else {
-                    print!(".");
-                }
-            }
-            println!("|");
-        }
-
-
-//        debug!("Drawing: x: {} y: {} n: {}", x, y, number_of_lines);
+        // for (line_nr, line) in raster.iter().enumerate() {
+        //     print!("|");
+        //     for (col_nr, col) in line.iter().enumerate() {
+        //         if *col {
+        //             print!("*");
+        //         } else {
+        //             print!(".");
+        //         }
+        //     }
+        //     println!("|");
+        // }
 
         self.redraw = true;
         self.inc_pc();
@@ -539,7 +549,7 @@ impl Cpu {
     /// Sets I to the location of the sprite for the character in VX. Characters 0-F (in hexadecimal) are represented by a 4x5 font.
     /// FX29
     fn set_index_register_to_character_sprite(&mut self, sprite: u8) {
-        let address_of_sprite = FONTSET_START + (sprite * 5)  as usize;
+        let address_of_sprite = FONTSET_START + (sprite * 5) as usize;
         self.set_index_register(address_of_sprite as u16);
     }
 
@@ -594,7 +604,6 @@ impl Cpu {
     /// CXNN
     fn rand(&mut self) {
         let x = self._x();
-        let vx = self.read_register(x);
         let nn = self._nn();
         let random_nr: u8 = thread_rng().gen_range(0, 255);
 
@@ -608,10 +617,9 @@ impl Cpu {
     fn check_key_pressed(&mut self, register: u8) {
         let vx = self.read_register(register);
         if self.key[vx as usize] != 0 {
-            self.pc += 4;
-            return;
+            self.inc_pc();
         }
-        debug!("Checking if key pressed: 0x{:X}",vx);
+        debug!("Checking if key pressed: 0x{:X}", vx);
         self.inc_pc();
     }
 
@@ -620,10 +628,9 @@ impl Cpu {
     fn check_key_released(&mut self, register: u8) {
         let vx = self.read_register(register);
         if self.key[vx as usize] == 0 {
-            self.pc += 4;
-            return
+            self.inc_pc();
         }
-        debug!("Checking if key released: 0x{:X}",vx);
+        debug!("Checking if key released: 0x{:X}", vx);
 
         self.inc_pc();
     }

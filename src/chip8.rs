@@ -15,7 +15,7 @@ impl Chip8 {
     pub fn new() -> Chip8 {
         Chip8 {
             cpu: Cpu::default().init(),
-            window: WindowSettings::new("Hello Piston!", [640, 480])
+            window: WindowSettings::new("Chip 8 Interpreter", [640, 320])
                 .exit_on_esc(true)
                 .build()
                 .unwrap(),
@@ -32,10 +32,13 @@ impl Chip8 {
 
     pub fn run(&mut self) {
         while let Some(e) = self.window.next() {
-            let should_draw = self.cpu.redraw;
+            if let Some(u) = e.update_args() {
+                self.cpu.cycle(u.dt);
+            }
+
+            let should_draw = self.cpu.needs_redraw();
             let mem = self.cpu.gfx;
             self.window.draw_2d(&e, |c, g| {
-
                 clear(color::BLACK, g);
                 let size = 10;
                 if should_draw {
@@ -55,29 +58,42 @@ impl Chip8 {
                 }
             });
 
-            if let Some(u) = e.update_args() {
-                self.cpu.cycle(u.dt);
-            }
-
             if let Some(Button::Keyboard(key)) = e.press_args() {
                 if key == Key::Escape {
                     self.dump_memory();
                 }
-                if key.code() >= 0x61 {
-                    self.cpu.handle_key_press(key.code() as u8);
+                // A - F
+                if key.code() >= 0x61 && key.code() <= 0x66 {
+                    let key_in_map = (key.code() - 87) as u8;
+                    self.cpu.handle_key_press(key_in_map);
+                } else if key.code() >= 0x30 && key.code() <= 0x39 {
+                    // 0 - 9
+                    let key_in_map = (key.code() - 48) as u8;
+                    self.cpu.handle_key_press(key_in_map);
                 }
             }
-
-
+            if let Some(Button::Keyboard(key)) = e.release_args() {
+                // A - F
+                if key.code() >= 0x61 && key.code() <= 0x66 {
+                    let key_in_map = (key.code() - 87) as u8;
+                    self.cpu.handle_key_release(key_in_map);
+                } else if key.code() >= 0x30 && key.code() <= 0x39 {
+                    // 0 - 9
+                    let key_in_map = (key.code() - 48) as u8;
+                    self.cpu.handle_key_release(key_in_map);
+                }
+            }
         }
     }
 
     pub fn dump_memory(&self) {
         let dump_file = Path::new("chip8.memdump");
         if dump_file.exists() {
-            fs::rename(dump_file, "chip8.memdump.1");
+            fs::rename(dump_file, "chip8.memdump.1").expect("Failed to move memdump");
         }
+
         let mut file = File::create("chip8.memdump").unwrap();
-        file.write_all(&self.cpu.dump_memory());
+        file.write_all(self.cpu.dump_memory())
+            .expect("Failed to write memdump");
     }
 }
